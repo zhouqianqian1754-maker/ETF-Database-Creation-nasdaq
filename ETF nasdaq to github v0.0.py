@@ -27,6 +27,10 @@ BASE_DIR = Path(__file__).resolve().parent
 TEMP_DOWNLOAD_DIR = BASE_DIR / "downloads"
 DATA_DIR = BASE_DIR / "data"
 
+print(f"Repository base directory: {BASE_DIR}")
+print(f"Download directory: {TEMP_DOWNLOAD_DIR}")
+print(f"Data directory: {DATA_DIR}")
+
 TEMP_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -287,6 +291,7 @@ def download_nasdaq_csv(ticker: str, download_dir: Path):
 
     try:
         url = f"https://www.nasdaq.com/market-activity/etf/{ticker.lower()}/historical"
+        print(f"Opening URL for {ticker}: {url}")
         driver.get(url)
 
         accept_cookies_if_present(driver)
@@ -318,6 +323,7 @@ def download_nasdaq_csv(ticker: str, download_dir: Path):
         download_button.click()
 
         latest_file = wait_for_download_complete(download_dir, timeout=120, pattern="*.csv")
+        print(f"Downloaded raw file for {ticker}: {latest_file}")
         return latest_file
 
     finally:
@@ -325,9 +331,14 @@ def download_nasdaq_csv(ticker: str, download_dir: Path):
 
 
 def process_ticker(ticker: str):
+    print("=" * 80)
     print(f"Processing {ticker}...")
+
     ticker_dir = DATA_DIR / f"{ticker} Database"
     ticker_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Ticker folder: {ticker_dir}")
+    print(f"Ticker folder exists: {ticker_dir.exists()}")
 
     latest_file = download_nasdaq_csv(ticker, TEMP_DOWNLOAD_DIR)
 
@@ -339,6 +350,7 @@ def process_ticker(ticker: str):
 
     shutil.move(str(latest_file), str(new_file_path))
     print(f"Downloaded and renamed to: {new_file_path}")
+    print(f"Saved download exists: {new_file_path.exists()}")
 
     df = pd.read_csv(new_file_path)
     df.columns = [c.strip() for c in df.columns]
@@ -438,6 +450,7 @@ def process_ticker(ticker: str):
 
     df.to_csv(new_file_path, index=False)
     print(f"Saved indicators into: {new_file_path}")
+    print(f"Processed file exists: {new_file_path.exists()}")
 
     master_path = ticker_dir / f"{ticker}_MasterData.csv"
 
@@ -483,6 +496,13 @@ def process_ticker(ticker: str):
     master_df = master_df.sort_values(by='Date', ascending=True).reset_index(drop=True)
 
     master_df.to_csv(master_path, index=False, date_format='%d/%m/%Y')
+    print(f"Saved master file: {master_path}")
+    print(f"Master file exists: {master_path.exists()}")
+
+    print("Files currently in ticker folder:")
+    for item in sorted(ticker_dir.glob("*")):
+        print(f" - {item.name}")
+
     print(
         f"Saved {master_path}: rows={len(master_df)}, "
         f"oldest={master_df['Date'].iloc[0].date()}, "
@@ -492,6 +512,7 @@ def process_ticker(ticker: str):
 
 
 def main():
+    print("Starting ETF download/update job...")
     for ticker in tickers:
         try:
             process_ticker(ticker)
