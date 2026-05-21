@@ -34,8 +34,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas numpy selenium webdriver-manager
 
+      - name: Show workspace before run
+        run: |
+          pwd
+          ls -la
+          find . -maxdepth 3 -type d | sort
+
       - name: Run ETF script
         run: python "ETF nasdaq to github v0.0.py"
+
+      - name: Show generated files
+        run: |
+          echo "=== data folder ==="
+          find data -type f | sort || true
+          echo "=== git status ==="
+          git status --short
 
       - name: Commit updated CSV files
         run: |
