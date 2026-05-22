@@ -51,34 +51,41 @@ def download_nasdaq_csv(ticker: str, download_dir: Path):
     end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     start_date = "2010-01-01"
 
-    url = f"https://www.nasdaq.com/api/v1/historical/{ticker}/stocks/{start_date}/{end_date}"
+    url = (
+        f"https://api.nasdaq.com/api/quote/{ticker}/historical"
+        f"?assetclass=etf&fromdate={start_date}&limit=9999&todate={end_date}"
+    )
+
     headers = {
         "User-Agent": "Mozilla/5.0",
-        "Accept": "text/csv,application/json,text/plain,*/*",
+        "Accept": "application/json,text/plain,*/*",
+        "Origin": "https://www.nasdaq.com",
         "Referer": f"https://www.nasdaq.com/market-activity/etf/{ticker.lower()}/historical"
     }
 
-    print(f"Downloading CSV for {ticker}: {url}", flush=True)
+    print(f"Downloading historical data for {ticker}: {url}", flush=True)
     response = requests.get(url, headers=headers, timeout=60)
     print(f"HTTP status for {ticker}: {response.status_code}", flush=True)
 
-    response.raise_for_status()
+    if response.status_code != 200:
+        save_debug_response(ticker, "http_error", response.text[:5000])
+        response.raise_for_status()
 
-    content = response.text.strip()
-    if not content:
-        raise ValueError(f"Empty response returned for {ticker}")
+    payload = response.json()
 
-    preview = content[:300].lower()
-    if "<html" in preview or "<!doctype" in preview:
-        save_debug_response(ticker, "html_instead_of_csv", content[:5000])
-        raise ValueError(f"Nasdaq returned HTML instead of CSV for {ticker}")
+    rows = (
+        payload.get("data", {})
+        .get("tradesTable", {})
+        .get("rows", [])
+    )
 
-    if "date" not in content.lower():
-        save_debug_response(ticker, "unexpected_response", content[:5000])
-        raise ValueError(f"Unexpected response format for {ticker}")
+    if not rows:
+        save_debug_response(ticker, "empty_rows", response.text[:5000])
+        raise ValueError(f"No historical rows returned for {ticker}")
 
+    df = pd.DataFrame(rows)
     file_path = download_dir / f"{ticker}_raw.csv"
-    file_path.write_text(content, encoding="utf-8")
+    df.to_csv(file_path, index=False)
     print(f"Saved raw CSV for {ticker}: {file_path}", flush=True)
 
     return file_path
@@ -293,6 +300,16 @@ def process_ticker(ticker: str):
     df = pd.read_csv(new_file_path)
     df.columns = [c.strip() for c in df.columns]
 
+    rename_map = {
+        "date": "Date",
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
+        "close": "Close/Last",
+        "volume": "Volume"
+    }
+    df = df.rename(columns={c: rename_map.get(c, c) for c in df.columns})
+
     if "Close/Last" not in df.columns:
         print(f"Could not find 'Close/Last' column for {ticker}, columns: {df.columns.tolist()}")
         return
@@ -302,7 +319,10 @@ def process_ticker(ticker: str):
 
     numeric_cols = [c for c in ["Open", "High", "Low", "Close/Last", "Volume"] if c in df.columns]
     for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col].astype(str).str.replace("[,$]", "", regex=True), errors="coerce")
+        df[col] = pd.to_numeric(
+            df[col].astype(str).str.replace("[,$]", "", regex=True),
+            errors="coerce"
+        )
 
     df["Close"] = df["Close/Last"]
     close_col = "Close"
@@ -403,7 +423,12 @@ def process_ticker(ticker: str):
             print(f"Skipping {f}: no Date column")
             continue
 
-        temp_df["Date"] = pd.to_datetime(temp_df["Date"], format="%d/%m/%Y", errors="coerce").dt.normalize()
+        temp_df["Date"] = pd.to_datetime(
+            temp_df["Date"],
+            format="%d/%m/%Y",
+            errors="coerce"
+        ).dt.normalize()
+
         temp_df = temp_df.dropna(subset=["Date"])
         df_list.append(temp_df)
 
