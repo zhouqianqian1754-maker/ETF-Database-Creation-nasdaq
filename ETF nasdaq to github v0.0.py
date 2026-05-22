@@ -8,8 +8,6 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from selenium import webdriver
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -46,6 +44,7 @@ def build_driver(download_dir: Path):
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
+
     chrome_options.add_experimental_option("prefs", {
         "download.default_directory": str(download_dir.resolve()),
         "download.prompt_for_download": False,
@@ -53,8 +52,7 @@ def build_driver(download_dir: Path):
         "safebrowsing.enabled": True
     })
 
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver = webdriver.Chrome(options=chrome_options)
     return driver
 
 
