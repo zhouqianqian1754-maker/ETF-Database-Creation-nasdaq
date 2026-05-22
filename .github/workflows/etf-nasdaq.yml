@@ -26,27 +26,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Google Chrome and matching ChromeDriver
-        id: setup-chrome
+      - name: Install Google Chrome
         uses: browser-actions/setup-chrome@v2
         with:
-          chrome-version: stable
-          install-chromedriver: true
+          chrome-version: 148
           install-dependencies: true
 
-      - name: Export ChromeDriver path
-        run: echo "CHROMEDRIVER_PATH=${{ steps.setup-chrome.outputs.chromedriver-path }}" >> $GITHUB_ENV
+      - name: Export Chrome binary path
+        run: echo "CHROME_BIN=/opt/google/chrome/chrome" >> $GITHUB_ENV
 
-      - name: Show browser versions
+      - name: Show browser version
         run: |
-          google-chrome --version || chrome --version
-          "$CHROMEDRIVER_PATH" --version
-          echo "Chromedriver path: $CHROMEDRIVER_PATH"
+          echo "Chrome binary: $CHROME_BIN"
+          $CHROME_BIN --version
 
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy selenium
+          pip install -U pandas numpy selenium
 
       - name: Show workspace before run
         run: |
