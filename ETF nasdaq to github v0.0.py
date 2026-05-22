@@ -13,6 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.chrome.service import Service
 
 
 tickers = [
@@ -52,7 +53,13 @@ def build_driver(download_dir: Path):
         "safebrowsing.enabled": True
     })
 
-    driver = webdriver.Chrome(options=chrome_options)
+    chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
+    if not chromedriver_path:
+        raise RuntimeError("CHROMEDRIVER_PATH is not set")
+
+    print(f"Using ChromeDriver from: {chromedriver_path}")
+    service = Service(executable_path=chromedriver_path)
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
 
