@@ -15,6 +15,7 @@ jobs:
     env:
       TZ: Asia/Hong_Kong
       PYTHONUNBUFFERED: "1"
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
     steps:
       - name: Checkout repository
@@ -57,6 +58,7 @@ jobs:
         with:
           name: etf-data
           path: data/
+          if-no-files-found: ignore
 
       - name: Upload debug artifacts
         if: always()
@@ -64,11 +66,16 @@ jobs:
         with:
           name: etf-debug
           path: debug/
+          if-no-files-found: ignore
 
       - name: Commit updated CSV files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/
-          git diff --cached --quiet || git commit -m "Daily ETF Nasdaq update"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Daily ETF Nasdaq update"
+            git push
+          fi
