@@ -61,17 +61,28 @@ jobs:
         run: python "ETF nasdaq to github v0.0.py"
 
       - name: Show generated files
+        if: always()
         run: |
           echo "=== data folder ==="
           find data -type f | sort || true
+          echo "=== debug folder ==="
+          find debug -type f | sort || true
           echo "=== git status ==="
           git status --short
 
       - name: Upload generated CSV files as artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: etf-data
           path: data/
+
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etf-debug
+          path: debug/
 
       - name: Commit updated CSV files
         run: |
