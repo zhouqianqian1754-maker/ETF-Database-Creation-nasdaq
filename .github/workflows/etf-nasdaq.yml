@@ -26,13 +26,22 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Google Chrome
-        uses: browser-actions/setup-chrome@v1
+      - name: Install Google Chrome and ChromeDriver
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: latest
+          install-chromedriver: true
+          install-dependencies: true
+
+      - name: Show browser versions
+        run: |
+          google-chrome --version || chrome --version
+          chromedriver --version
 
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy selenium webdriver-manager
+          pip install pandas numpy selenium
 
       - name: Show workspace before run
         run: |
@@ -49,6 +58,12 @@ jobs:
           find data -type f | sort || true
           echo "=== git status ==="
           git status --short
+
+      - name: Upload generated CSV files as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: etf-data
+          path: data/
 
       - name: Commit updated CSV files
         run: |
