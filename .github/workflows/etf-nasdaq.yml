@@ -26,19 +26,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Google Chrome
+      - name: Install Google Chrome and matching ChromeDriver
+        id: setup-chrome
         uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: 148
+          install-chromedriver: true
           install-dependencies: true
 
-      - name: Export Chrome binary path
-        run: echo "CHROME_BIN=/opt/google/chrome/chrome" >> $GITHUB_ENV
+      - name: Export browser paths
+        run: |
+          echo "CHROME_BIN=${{ steps.setup-chrome.outputs.chrome-path }}" >> $GITHUB_ENV
+          echo "CHROMEDRIVER_PATH=${{ steps.setup-chrome.outputs.chromedriver-path }}" >> $GITHUB_ENV
 
-      - name: Show browser version
+      - name: Show browser info
         run: |
           echo "Chrome binary: $CHROME_BIN"
-          $CHROME_BIN --version
+          echo "ChromeDriver path: $CHROMEDRIVER_PATH"
+          "$CHROME_BIN" --version
+          "$CHROMEDRIVER_PATH" --version
 
       - name: Install Python packages
         run: |
