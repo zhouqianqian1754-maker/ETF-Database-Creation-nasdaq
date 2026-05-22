@@ -25,6 +25,7 @@ tickers = [
 BASE_DIR = Path(__file__).resolve().parent
 TEMP_DOWNLOAD_DIR = BASE_DIR / "downloads"
 DATA_DIR = BASE_DIR / "data"
+DEBUG_DIR = BASE_DIR / "debug"
 
 print(f"Repository base directory: {BASE_DIR}")
 print(f"Download directory: {TEMP_DOWNLOAD_DIR}")
@@ -32,6 +33,7 @@ print(f"Data directory: {DATA_DIR}")
 
 TEMP_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_current_date_str():
@@ -68,7 +70,6 @@ def build_driver(download_dir: Path):
 
     print(f"Using Chrome binary: {chrome_bin}")
     print(f"Using ChromeDriver path: {chromedriver_path}")
-    print("Creating Chrome driver...")
 
     service = Service(executable_path=chromedriver_path)
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -92,7 +93,7 @@ def clear_download_dir(folder: Path):
             f.unlink()
 
 
-def accept_cookies_if_present(driver, timeout=10):
+def accept_cookies_if_present(driver, timeout=8):
     print("Checking cookie popup...")
     wait = WebDriverWait(driver, timeout)
     try:
@@ -108,10 +109,10 @@ def accept_cookies_if_present(driver, timeout=10):
         btn = wait.until(
             EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))
         )
-        btn.click()
+        driver.execute_script("arguments[0].click();", btn)
         print("Cookie banner accepted.")
-    except (TimeoutException, NoSuchElementException):
-        print("No cookie accept button clicked.")
+    except Exception:
+        print("No cookie accept action needed.")
     finally:
         driver.switch_to.default_content()
 
@@ -133,6 +134,124 @@ def wait_for_download_complete(folder: Path, timeout=120, pattern="*.csv"):
         time.sleep(1)
 
     raise TimeoutError("Download did not complete within timeout.")
+
+
+def safe_click(driver, element):
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
+    time.sleep(1)
+    try:
+        element.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", element)
+
+
+def save_debug_artifacts(driver, ticker, label):
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    html_path = DEBUG_DIR / f"{ticker}_{label}_{stamp}.html"
+    png_path = DEBUG_DIR / f"{ticker}_{label}_{stamp}.png"
+
+    try:
+        html_path.write_text(driver.page_source, encoding="utf-8")
+        driver.save_screenshot(str(png_path))
+        print(f"Saved debug HTML: {html_path}")
+        print(f"Saved debug screenshot: {png_path}")
+    except Exception as e:
+        print(f"Could not save debug artifacts: {e}")
+
+
+def click_max_if_present(driver, wait):
+    max_selectors = [
+        "//button[normalize-space()='MAX']",
+        "//button[contains(., 'MAX')]",
+        "//*[self::button or self::span][normalize-space()='MAX']",
+        "//*[contains(@class,'historical') or contains(@class,'time') or contains(@class,'range')]//button[contains(., 'MAX')]"
+    ]
+
+    for xpath in max_selectors:
+        try:
+            print(f"Trying MAX selector: {xpath}")
+            elem = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
+            safe_click(driver, elem)
+            print("MAX clicked successfully.")
+            time.sleep(3)
+            return True
+        except Exception:
+            continue
+
+    print("MAX button not found or not clickable. Continuing without MAX.")
+    return False
+
+
+def click_download_button(driver, wait):
+    download_selectors = [
+        "//span[contains(., 'Download historical data')]/ancestor::button",
+        "//button[contains(., 'Download historical data')]",
+        "//button[contains(., 'Download Data')]",
+        "//button[contains(., 'Download')]",
+        "//*[@aria-label='Download historical data']"
+    ]
+
+    for xpath in download_selectors:
+        try:
+            print(f"Trying download selector: {xpath}")
+            elem = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
+            safe_click(driver, elem)
+            print("Download button clicked.")
+            return True
+        except Exception:
+            continue
+
+    return False
+
+
+def download_nasdaq_csv(ticker: str, download_dir: Path):
+    clear_download_dir(download_dir)
+    driver = build_driver(download_dir)
+
+    try:
+        url = f"https://www.nasdaq.com/market-activity/etf/{ticker.lower()}/historical"
+        print(f"Opening URL for {ticker}: {url}")
+        driver.get(url)
+        print("Page loaded.")
+        time.sleep(5)
+
+        accept_cookies_if_present(driver)
+
+        wait = WebDriverWait(driver, 30)
+
+        try:
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        except TimeoutException:
+            save_debug_artifacts(driver, ticker, "body_timeout")
+            raise
+
+        try:
+            print("Waiting for page text indicating historical data...")
+            wait.until(
+                lambda d: "Historical Data" in d.page_source or "Download historical data" in d.page_source
+            )
+            print("Historical section text detected.")
+        except TimeoutException:
+            print("Historical section text not detected; continuing.")
+            save_debug_artifacts(driver, ticker, "historical_text_missing")
+
+        click_max_if_present(driver, wait)
+
+        if not click_download_button(driver, wait):
+            save_debug_artifacts(driver, ticker, "download_button_missing")
+            raise TimeoutException("Could not find clickable download button.")
+
+        latest_file = wait_for_download_complete(download_dir, timeout=120, pattern="*.csv")
+        print(f"Downloaded raw file for {ticker}: {latest_file}")
+        return latest_file
+
+    except Exception:
+        save_debug_artifacts(driver, ticker, "download_failure")
+        raise
+
+    finally:
+        print("Closing driver...")
+        driver.quit()
 
 
 def kama(closes, n=10, fast_period=2, slow_period=30):
@@ -319,60 +438,6 @@ def create_labels(df, col_close="Close"):
     return df
 
 
-def download_nasdaq_csv(ticker: str, download_dir: Path):
-    clear_download_dir(download_dir)
-    driver = build_driver(download_dir)
-
-    try:
-        url = f"https://www.nasdaq.com/market-activity/etf/{ticker.lower()}/historical"
-        print(f"Opening URL for {ticker}: {url}")
-        driver.get(url)
-        print("Page loaded.")
-
-        accept_cookies_if_present(driver)
-
-        wait = WebDriverWait(driver, 25)
-
-        try:
-            print("Waiting for cookie banner to disappear...")
-            wait.until(EC.invisibility_of_element_located((By.ID, "onetrust-banner-sdk")))
-        except TimeoutException:
-            print("Cookie banner invisibility timeout ignored.")
-
-        try:
-            print("Trying optional tab click...")
-            tab = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "jupiter22-tab")))
-            tab.click()
-            print("Optional tab clicked.")
-        except Exception:
-            print("Optional tab not clicked.")
-
-        print("Waiting for MAX button...")
-        max_tab = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'MAX')]"))
-        )
-        max_tab.click()
-        print("MAX clicked.")
-        time.sleep(3)
-
-        print("Waiting for download button...")
-        download_button = wait.until(
-            EC.element_to_be_clickable(
-                (By.XPATH, "//span[contains(text(), 'Download historical data')]/ancestor::button")
-            )
-        )
-        download_button.click()
-        print("Download button clicked.")
-
-        latest_file = wait_for_download_complete(download_dir, timeout=120, pattern="*.csv")
-        print(f"Downloaded raw file for {ticker}: {latest_file}")
-        return latest_file
-
-    finally:
-        print("Closing driver...")
-        driver.quit()
-
-
 def process_ticker(ticker: str):
     print("=" * 80)
     print(f"Processing {ticker}...")
@@ -407,22 +472,17 @@ def process_ticker(ticker: str):
 
     numeric_cols = [c for c in ["Open", "High", "Low", "Close/Last", "Volume"] if c in df.columns]
     for col in numeric_cols:
-        df[col] = pd.to_numeric(
-            df[col].astype(str).str.replace("[,$]", "", regex=True),
-            errors="coerce"
-        )
+        df[col] = pd.to_numeric(df[col].astype(str).str.replace("[,$]", "", regex=True), errors="coerce")
 
     df["Close"] = df["Close/Last"]
     close_col = "Close"
 
     df["daily_return"] = df[close_col].pct_change()
     df["daily_return_pct"] = df["daily_return"] * 100
-
     df["MA_5"] = df[close_col].rolling(window=5, min_periods=1).mean()
     df["MA_20"] = df[close_col].rolling(window=20, min_periods=1).mean()
     df["MA_50"] = df[close_col].rolling(window=50, min_periods=1).mean()
     df["MA_200"] = df[close_col].rolling(window=200, min_periods=1).mean()
-
     df["log_ret_1"] = np.log(df[close_col]).diff(1)
     df["roc_5"] = df[close_col].pct_change(5)
     df["roc_20"] = df[close_col].pct_change(20)
@@ -458,15 +518,14 @@ def process_ticker(ticker: str):
         atr = calc_ATR(df, n=14, col_close="Close")
         df = df.merge(atr[["Date", "TR", "ATR"]], on="Date", how="left")
 
-    if "Close" in df.columns:
-        hv = calc_historical_volatility(df, n=20, col_close="Close")
-        df = df.merge(hv[["Date", "log_return", "HV_daily", "HV_annual"]], on="Date", how="left")
+    hv = calc_historical_volatility(df, n=20, col_close="Close")
+    df = df.merge(hv[["Date", "log_return", "HV_daily", "HV_annual"]], on="Date", how="left")
 
-        sharpe = calc_sharpe_ratio(df, col_close="Close", rf_annual=0.03, window=252)
-        df = df.merge(sharpe[["Date", "excess_ret", "Sharpe_Ratio"]], on="Date", how="left")
+    sharpe = calc_sharpe_ratio(df, col_close="Close", rf_annual=0.03, window=252)
+    df = df.merge(sharpe[["Date", "excess_ret", "Sharpe_Ratio"]], on="Date", how="left")
 
-        cagr_df = calc_cagr(df, col_close="Close", rolling_window=252)
-        df = df.merge(cagr_df[["Date", "CAGR_Full", "CAGR_252D"]], on="Date", how="left")
+    cagr_df = calc_cagr(df, col_close="Close", rolling_window=252)
+    df = df.merge(cagr_df[["Date", "CAGR_Full", "CAGR_252D"]], on="Date", how="left")
 
     if set(["Close", "Volume"]).issubset(df.columns):
         obv = calc_OBV(df, col_close="Close", col_volume="Volume")
@@ -480,12 +539,10 @@ def process_ticker(ticker: str):
     returns = np.log(prices / prices.shift(1))
     df["vol_6m"] = returns.rolling(126).std()
 
-    bb_window = 20
-    bb_std = 2
-    rolling = df[close_col].rolling(window=bb_window, min_periods=bb_window)
+    rolling = df[close_col].rolling(window=20, min_periods=20)
     df["BB_mid"] = rolling.mean()
-    df["BB_upper"] = df["BB_mid"] + bb_std * rolling.std(ddof=0)
-    df["BB_lower"] = df["BB_mid"] - bb_std * rolling.std(ddof=0)
+    df["BB_upper"] = df["BB_mid"] + 2 * rolling.std(ddof=0)
+    df["BB_lower"] = df["BB_mid"] - 2 * rolling.std(ddof=0)
 
     df = create_labels(df, col_close=close_col)
     df = df.sort_values("Date", ascending=True).reset_index(drop=True)
@@ -493,14 +550,9 @@ def process_ticker(ticker: str):
 
     df.to_csv(new_file_path, index=False)
     print(f"Saved indicators into: {new_file_path}")
-    print(f"Processed file exists: {new_file_path.exists()}")
 
     master_path = ticker_dir / f"{ticker}_MasterData.csv"
-
-    hist_files = [
-        f for f in ticker_dir.glob("*.csv")
-        if f.name.startswith(f"{ticker}_hist_till")
-    ]
+    hist_files = [f for f in ticker_dir.glob("*.csv") if f.name.startswith(f"{ticker}_hist_till")]
 
     if not hist_files:
         print(f"No hist files for {ticker}")
@@ -521,12 +573,7 @@ def process_ticker(ticker: str):
             print(f"Skipping {f}: no Date column")
             continue
 
-        temp_df["Date"] = pd.to_datetime(
-            temp_df["Date"],
-            format="%d/%m/%Y",
-            errors="coerce"
-        ).dt.normalize()
-
+        temp_df["Date"] = pd.to_datetime(temp_df["Date"], format="%d/%m/%Y", errors="coerce").dt.normalize()
         temp_df = temp_df.dropna(subset=["Date"])
         df_list.append(temp_df)
 
@@ -540,12 +587,6 @@ def process_ticker(ticker: str):
 
     master_df.to_csv(master_path, index=False, date_format="%d/%m/%Y")
     print(f"Saved master file: {master_path}")
-    print(f"Master file exists: {master_path.exists()}")
-
-    print("Files currently in ticker folder:")
-    for item in sorted(ticker_dir.glob("*")):
-        print(f" - {item.name}")
-
     print(
         f"Saved {master_path}: rows={len(master_df)}, "
         f"oldest={master_df['Date'].iloc[0].date()}, "
