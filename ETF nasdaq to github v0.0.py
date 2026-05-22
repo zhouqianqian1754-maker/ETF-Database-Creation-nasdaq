@@ -40,6 +40,8 @@ def get_current_date_str():
 
 def build_driver(download_dir: Path):
     chrome_options = Options()
+    chrome_options.binary_location = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
+
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -53,13 +55,8 @@ def build_driver(download_dir: Path):
         "safebrowsing.enabled": True
     })
 
-    chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
-    if not chromedriver_path:
-        raise RuntimeError("CHROMEDRIVER_PATH is not set")
-
-    print(f"Using ChromeDriver from: {chromedriver_path}")
-    service = Service(executable_path=chromedriver_path)
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    print(f"Using Chrome binary: {chrome_options.binary_location}")
+    driver = webdriver.Chrome(service=Service(), options=chrome_options)
     return driver
 
 
