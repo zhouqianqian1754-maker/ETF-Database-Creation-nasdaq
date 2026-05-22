@@ -1,19 +1,11 @@
 import os
-import time
 import shutil
 import traceback
 import pandas as pd
 import numpy as np
+import requests
 from pathlib import Path
 from datetime import datetime, timezone
-
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from selenium.webdriver.chrome.service import Service
 
 
 tickers = [
@@ -40,218 +32,56 @@ def get_current_date_str():
     return datetime.now(timezone.utc).strftime("%Y%m%d")
 
 
-def build_driver(download_dir: Path):
-    print("Entering build_driver()...")
-
-    chrome_bin = os.environ.get("CHROME_BIN")
-    chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
-
-    if not chrome_bin:
-        raise RuntimeError("CHROME_BIN is not set")
-    if not chromedriver_path:
-        raise RuntimeError("CHROMEDRIVER_PATH is not set")
-
-    chrome_options = Options()
-    chrome_options.binary_location = chrome_bin
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-
-    prefs = {
-        "download.default_directory": str(download_dir.resolve()),
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing.enabled": True,
-        "profile.default_content_settings.popups": 0
-    }
-    chrome_options.add_experimental_option("prefs", prefs)
-
-    print(f"Using Chrome binary: {chrome_bin}")
-    print(f"Using ChromeDriver path: {chromedriver_path}")
-
-    service = Service(executable_path=chromedriver_path)
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    driver.set_page_load_timeout(60)
-
-    driver.execute_cdp_cmd(
-        "Page.setDownloadBehavior",
-        {
-            "behavior": "allow",
-            "downloadPath": str(download_dir.resolve())
-        }
-    )
-
-    print("Chrome driver created successfully.")
-    return driver
-
-
 def clear_download_dir(folder: Path):
     for f in folder.glob("*"):
         if f.is_file():
             f.unlink()
 
 
-def accept_cookies_if_present(driver, timeout=8):
-    print("Checking cookie popup...")
-    wait = WebDriverWait(driver, timeout)
-    try:
-        try:
-            iframe = wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='onetrust']"))
-            )
-            driver.switch_to.frame(iframe)
-            print("Cookie iframe found.")
-        except TimeoutException:
-            print("No cookie iframe found.")
-
-        btn = wait.until(
-            EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler"))
-        )
-        driver.execute_script("arguments[0].click();", btn)
-        print("Cookie banner accepted.")
-    except Exception:
-        print("No cookie accept action needed.")
-    finally:
-        driver.switch_to.default_content()
-
-
-def wait_for_download_complete(folder: Path, timeout=120, pattern="*.csv"):
-    print(f"Waiting for download in {folder}...")
-    start_time = time.time()
-
-    while time.time() - start_time < timeout:
-        csv_files = list(folder.glob(pattern))
-        crdownload_files = list(folder.glob("*.crdownload"))
-
-        if csv_files and not crdownload_files:
-            latest_file = max(csv_files, key=lambda f: f.stat().st_ctime)
-            if latest_file.is_file():
-                print(f"Download completed: {latest_file}")
-                return latest_file
-
-        time.sleep(1)
-
-    raise TimeoutError("Download did not complete within timeout.")
-
-
-def safe_click(driver, element):
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
-    time.sleep(1)
-    try:
-        element.click()
-    except Exception:
-        driver.execute_script("arguments[0].click();", element)
-
-
-def save_debug_artifacts(driver, ticker, label):
+def save_debug_response(ticker: str, label: str, content: str):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    html_path = DEBUG_DIR / f"{ticker}_{label}_{stamp}.html"
-    png_path = DEBUG_DIR / f"{ticker}_{label}_{stamp}.png"
-
-    try:
-        html_path.write_text(driver.page_source, encoding="utf-8")
-        driver.save_screenshot(str(png_path))
-        print(f"Saved debug HTML: {html_path}")
-        print(f"Saved debug screenshot: {png_path}")
-    except Exception as e:
-        print(f"Could not save debug artifacts: {e}")
-
-
-def click_max_if_present(driver, wait):
-    max_selectors = [
-        "//button[normalize-space()='MAX']",
-        "//button[contains(., 'MAX')]",
-        "//*[self::button or self::span][normalize-space()='MAX']",
-        "//*[contains(@class,'historical') or contains(@class,'time') or contains(@class,'range')]//button[contains(., 'MAX')]"
-    ]
-
-    for xpath in max_selectors:
-        try:
-            print(f"Trying MAX selector: {xpath}")
-            elem = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
-            safe_click(driver, elem)
-            print("MAX clicked successfully.")
-            time.sleep(3)
-            return True
-        except Exception:
-            continue
-
-    print("MAX button not found or not clickable. Continuing without MAX.")
-    return False
-
-
-def click_download_button(driver, wait):
-    download_selectors = [
-        "//span[contains(., 'Download historical data')]/ancestor::button",
-        "//button[contains(., 'Download historical data')]",
-        "//button[contains(., 'Download Data')]",
-        "//button[contains(., 'Download')]",
-        "//*[@aria-label='Download historical data']"
-    ]
-
-    for xpath in download_selectors:
-        try:
-            print(f"Trying download selector: {xpath}")
-            elem = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
-            safe_click(driver, elem)
-            print("Download button clicked.")
-            return True
-        except Exception:
-            continue
-
-    return False
+    path = DEBUG_DIR / f"{ticker}_{label}_{stamp}.txt"
+    path.write_text(content, encoding="utf-8")
+    print(f"Saved debug response: {path}", flush=True)
 
 
 def download_nasdaq_csv(ticker: str, download_dir: Path):
     clear_download_dir(download_dir)
-    driver = build_driver(download_dir)
 
-    try:
-        url = f"https://www.nasdaq.com/market-activity/etf/{ticker.lower()}/historical"
-        print(f"Opening URL for {ticker}: {url}")
-        driver.get(url)
-        print("Page loaded.")
-        time.sleep(5)
+    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    start_date = "2010-01-01"
 
-        accept_cookies_if_present(driver)
+    url = f"https://www.nasdaq.com/api/v1/historical/{ticker}/stocks/{start_date}/{end_date}"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/csv,application/json,text/plain,*/*",
+        "Referer": f"https://www.nasdaq.com/market-activity/etf/{ticker.lower()}/historical"
+    }
 
-        wait = WebDriverWait(driver, 30)
+    print(f"Downloading CSV for {ticker}: {url}", flush=True)
+    response = requests.get(url, headers=headers, timeout=60)
+    print(f"HTTP status for {ticker}: {response.status_code}", flush=True)
 
-        try:
-            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        except TimeoutException:
-            save_debug_artifacts(driver, ticker, "body_timeout")
-            raise
+    response.raise_for_status()
 
-        try:
-            print("Waiting for page text indicating historical data...")
-            wait.until(
-                lambda d: "Historical Data" in d.page_source or "Download historical data" in d.page_source
-            )
-            print("Historical section text detected.")
-        except TimeoutException:
-            print("Historical section text not detected; continuing.")
-            save_debug_artifacts(driver, ticker, "historical_text_missing")
+    content = response.text.strip()
+    if not content:
+        raise ValueError(f"Empty response returned for {ticker}")
 
-        click_max_if_present(driver, wait)
+    preview = content[:300].lower()
+    if "<html" in preview or "<!doctype" in preview:
+        save_debug_response(ticker, "html_instead_of_csv", content[:5000])
+        raise ValueError(f"Nasdaq returned HTML instead of CSV for {ticker}")
 
-        if not click_download_button(driver, wait):
-            save_debug_artifacts(driver, ticker, "download_button_missing")
-            raise TimeoutException("Could not find clickable download button.")
+    if "date" not in content.lower():
+        save_debug_response(ticker, "unexpected_response", content[:5000])
+        raise ValueError(f"Unexpected response format for {ticker}")
 
-        latest_file = wait_for_download_complete(download_dir, timeout=120, pattern="*.csv")
-        print(f"Downloaded raw file for {ticker}: {latest_file}")
-        return latest_file
+    file_path = download_dir / f"{ticker}_raw.csv"
+    file_path.write_text(content, encoding="utf-8")
+    print(f"Saved raw CSV for {ticker}: {file_path}", flush=True)
 
-    except Exception:
-        save_debug_artifacts(driver, ticker, "download_failure")
-        raise
-
-    finally:
-        print("Closing driver...")
-        driver.quit()
+    return file_path
 
 
 def kama(closes, n=10, fast_period=2, slow_period=30):
