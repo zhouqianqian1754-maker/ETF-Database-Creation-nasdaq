@@ -73,22 +73,6 @@ jobs:
           path: debug/
           if-no-files-found: ignore
 
-      - name: Upload generated CSV files as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: etf-data
-          path: data/
-          if-no-files-found: ignore
-
-      - name: Upload debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: etf-debug
-          path: debug/
-          if-no-files-found: ignore
-
       - name: Commit and push updated CSV files
         shell: bash
         run: |
@@ -96,6 +80,10 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
           git add data/
 
@@ -105,7 +93,4 @@ jobs:
           fi
 
           git commit -m "Daily ETF Nasdaq update"
-
-          git fetch origin main
-          git pull --rebase origin main
-          git push origin HEAD:main
+          git push origin main
