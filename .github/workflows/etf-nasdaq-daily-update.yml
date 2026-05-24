@@ -1,21 +1,30 @@
-name: ETF Nasdaq Daily Update
+name: ETF Analysis
+
+run-name: ETF analysis by ${{ github.actor }}
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 23 * * *"
+    - cron: "15 23 * * *"
       timezone: "Asia/Hong_Kong"
+  push:
+    branches:
+      - main
+    paths:
+      - "**.py"
+      - ".github/workflows/etf-analysis.yml"
 
 permissions:
   contents: write
 
 concurrency:
-  group: etf-nasdaq-daily-update
+  group: etf-analysis-daily
   cancel-in-progress: false
 
 jobs:
-  run-etf-script:
+  analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     defaults:
       run:
@@ -27,79 +36,74 @@ jobs:
       PYTHONUNBUFFERED: "1"
 
     steps:
-      - name: Checkout repository
+      - name: Checkout analysis repo
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Sync workspace to latest main
+      - name: Sync analysis repo to latest main
         run: |
           set -euo pipefail
           git fetch origin main
           git checkout main
           git reset --hard origin/main
 
+      - name: Checkout database repo
+        uses: actions/checkout@v4
+        with:
+          repository: zhouqianqian1754-maker/ETF-Database-Creation-nasdaq
+          path: ETF-Database-Creation-nasdaq
+
+      - name: Show workspace
+        run: |
+          set -euo pipefail
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          pwd
+          ls -la
+          find . -maxdepth 3 -type f | sort
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Python packages
+      - name: Install dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -U pandas numpy requests
+          pip install pandas numpy scipy requests yfinance
 
-      - name: Show workspace before run
+      - name: Run analysis
         run: |
           set -euo pipefail
-          pwd
-          ls -la
-          find . -maxdepth 3 -type d | sort
+          python "ETF_integrated_analysis_github.py"
 
-      - name: Run ETF script
-        run: |
-          set -euo pipefail
-          python -u "ETF nasdaq to github v0.0.py"
-
-      - name: Show generated files
+      - name: Show output files
         if: always()
         run: |
-          echo "=== data folder ==="
-          find data -type f | sort || true
-          echo "=== debug folder ==="
-          find debug -type f | sort || true
+          echo "=== output folder ==="
+          find output -type f | sort || true
           echo "=== git status ==="
           git status --short || true
-          echo "=== last 3 commits ==="
-          git log --oneline -n 3 || true
 
-      - name: Upload generated CSV files as artifact
+      - name: Upload outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: etf-data-${{ github.run_id }}
-          path: data/
-          if-no-files-found: ignore
+          name: etf-analysis-results-${{ github.run_id }}
+          path: output/
+          if-no-files-found: warn
 
-      - name: Upload debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: etf-debug-${{ github.run_id }}
-          path: debug/
-          if-no-files-found: ignore
-
-      - name: Commit and push updated files
+      - name: Commit and push outputs
         run: |
           set -euo pipefail
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add data/ debug/
+          git add output/
 
           echo "=== staged changes ==="
           git diff --cached --stat || true
@@ -109,5 +113,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Daily ETF Nasdaq update"
+          git commit -m "Update ETF analysis outputs"
           git push origin HEAD:main
