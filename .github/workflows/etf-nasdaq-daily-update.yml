@@ -14,13 +14,13 @@ on:
       - main
     paths:
       - "**.py"
-      - ".github/workflows/etf-analysis.yml"
+      - ".github/workflows/etf-daily-update.yml"
 
 permissions:
   contents: write
 
 concurrency:
-  group: etf-analysis-daily
+  group: etf-daily-update
   cancel-in-progress: false
 
 jobs:
@@ -38,25 +38,19 @@ jobs:
       PYTHONUNBUFFERED: "1"
 
     steps:
-      - name: Checkout analysis repo
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Sync analysis repo to latest main
+      - name: Sync repo to latest main
         run: |
           set -euo pipefail
           git fetch origin main
           git checkout main
           git reset --hard origin/main
-
-      - name: Checkout database repo
-        uses: actions/checkout@v4
-        with:
-          repository: zhouqianqian1754-maker/ETF-Database-Creation-nasdaq
-          path: ETF-Database-Creation-nasdaq
 
       - name: Show workspace
         run: |
@@ -75,37 +69,47 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install pandas numpy scipy requests yfinance
+          pip install pandas numpy requests
 
-      - name: Run analysis
+      - name: Run ETF update
         run: |
           set -euo pipefail
           python "ETF nasdaq to github.py"
 
-      - name: Show output files
+      - name: Show generated files
         if: always()
         run: |
-          echo "=== output folder ==="
-          find output -type f | sort || true
+          echo "=== data folder ==="
+          find data -type f | sort || true
+          echo "=== debug folder ==="
+          find debug -type f | sort || true
           echo "=== git status ==="
           git status --short || true
 
-      - name: Upload outputs
+      - name: Upload data artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: etf-analysis-results-${{ github.run_id }}
-          path: output/
-          if-no-files-found: warn
+          name: etf-data-${{ github.run_id }}
+          path: data/
+          if-no-files-found: ignore
 
-      - name: Commit and push outputs
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etf-debug-${{ github.run_id }}
+          path: debug/
+          if-no-files-found: ignore
+
+      - name: Commit and push updated files
         run: |
           set -euo pipefail
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add output/
+          git add data/ debug/
 
           echo "=== staged changes ==="
           git diff --cached --stat || true
@@ -115,5 +119,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Update ETF analysis outputs"
+          git commit -m "Daily ETF Nasdaq update"
           git push origin HEAD:main
