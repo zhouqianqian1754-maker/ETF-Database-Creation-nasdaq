@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  analyze:
+  update-etf-data:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -38,21 +38,21 @@ jobs:
       PYTHONUNBUFFERED: "1"
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Sync repo to latest main
+      - name: Sync workspace to latest main
         run: |
           set -euo pipefail
           git fetch origin main
           git checkout main
           git reset --hard origin/main
 
-      - name: Show workspace
+      - name: Show workspace before run
         run: |
           set -euo pipefail
           echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
@@ -65,13 +65,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Python packages
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install pandas numpy requests
+          pip install -U pandas numpy requests
 
-      - name: Run ETF update
+      - name: Run ETF update script
         run: |
           set -euo pipefail
           python "ETF nasdaq to github.py"
