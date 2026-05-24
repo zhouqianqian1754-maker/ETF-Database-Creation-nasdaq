@@ -5,7 +5,9 @@ run-name: ETF analysis by ${{ github.actor }}
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 23 * * *"
+    - cron: "35 22 * * *"
+      timezone: "Asia/Hong_Kong"
+    - cron: "50 3 * * *"
       timezone: "Asia/Hong_Kong"
   push:
     branches:
@@ -78,7 +80,7 @@ jobs:
       - name: Run analysis
         run: |
           set -euo pipefail
-          python "ETF_integrated_analysis_github.py"
+          python "ETF nasdaq to github.py"
 
       - name: Show output files
         if: always()
