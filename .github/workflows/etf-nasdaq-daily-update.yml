@@ -1,6 +1,6 @@
-name: ETF Analysis
+name: ETF Daily Update
 
-run-name: ETF analysis by ${{ github.actor }}
+run-name: ETF Daily Update by ${{ github.actor }}
 
 on:
   workflow_dispatch:
