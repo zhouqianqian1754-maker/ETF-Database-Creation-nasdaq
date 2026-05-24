@@ -28,6 +28,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Sync workspace to latest main
+        shell: bash
+        run: |
+          set -e
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -45,6 +53,7 @@ jobs:
           find . -maxdepth 3 -type d | sort
 
       - name: Run ETF script
+        working-directory: ${{ github.workspace }}
         run: python -u "ETF nasdaq to github v0.0.py"
 
       - name: Show generated files
@@ -81,11 +90,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git fetch origin main
-          git checkout main
-          git reset --hard origin/main
-
-          git add data/
+          git add data/ debug/
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
