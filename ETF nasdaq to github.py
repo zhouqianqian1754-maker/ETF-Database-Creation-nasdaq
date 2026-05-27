@@ -5,6 +5,7 @@ import pandas as pd
 import requests
 from pathlib import Path
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 tickers = [
     "ITA", "PPA", "SHLD", "XAR", "EUAD", "ARKX",
@@ -18,6 +19,8 @@ etf_tickers = {
     "WAR", "ASIA", "SPDV"
 }
 stock_tickers = {"DE", "DFNS"}
+
+HK_TZ = ZoneInfo("Asia/Hong_Kong")
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMP_DOWNLOAD_DIR = BASE_DIR / "downloads"
@@ -41,7 +44,7 @@ session.headers.update({
 })
 
 def get_current_date_str():
-    return datetime.now(timezone.utc).strftime("%Y%m%d")
+    return datetime.now(HK_TZ).strftime("%Y%m%d")
 
 def clear_download_dir(folder: Path):
     for f in folder.glob("*"):
@@ -49,7 +52,7 @@ def clear_download_dir(folder: Path):
             f.unlink()
 
 def save_debug_response(ticker: str, label: str, content: str):
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now(HK_TZ).strftime("%Y%m%d_%H%M%S")
     path = DEBUG_DIR / f"{ticker}_{label}_{stamp}.txt"
     path.write_text(content, encoding="utf-8")
     print(f"Saved debug response: {path}", flush=True)
@@ -82,8 +85,10 @@ def download_nasdaq_csv(ticker: str, download_dir: Path):
     )
 
     headers = {
-        "Referer": f"https://www.nasdaq.com/market-activity/"
-                   f"{'stocks' if assetclass == 'stocks' else 'etf'}/{ticker.lower()}/historical"
+        "Referer": (
+            f"https://www.nasdaq.com/market-activity/"
+            f"{'stocks' if assetclass == 'stocks' else 'etf'}/{ticker.lower()}/historical"
+        )
     }
 
     print(f"Downloading historical data for {ticker}: {url}", flush=True)
