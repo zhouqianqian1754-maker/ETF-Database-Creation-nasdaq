@@ -5,9 +5,7 @@ run-name: ETF Daily Update by ${{ github.actor }}
 on:
   workflow_dispatch:
   schedule:
-    - cron: "35 22 * * *"
-      timezone: "Asia/Hong_Kong"
-    - cron: "50 3 * * *"
+    - cron: "0 5 * * *"
       timezone: "Asia/Hong_Kong"
   push:
     branches:
