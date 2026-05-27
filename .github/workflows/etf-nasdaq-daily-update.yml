@@ -112,4 +112,4 @@ jobs:
           fi
 
           git commit -m "Daily ETF Nasdaq update"
-          git push origin HEAD:main
+          git push origin HEAD:main 
