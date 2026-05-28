@@ -126,6 +126,16 @@ def get_output_paths(ticker: str):
     master_file_path = ticker_dir / f"{ticker}_MasterData.csv"
     return ticker_dir, daily_file_path, master_file_path
 
+def parse_date_series(series: pd.Series) -> pd.Series:
+    s = series.astype(str).str.strip()
+
+    try:
+        parsed = pd.to_datetime(s, format="mixed", dayfirst=True, errors="coerce")
+    except Exception:
+        parsed = pd.to_datetime(s, dayfirst=True, errors="coerce")
+
+    return parsed
+
 def standardize_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df.columns = [c.strip() for c in df.columns]
 
@@ -143,7 +153,7 @@ def standardize_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
         save_debug_response(ticker, "missing_columns", str(df.columns.tolist()))
         raise ValueError(f"Missing Date or Close/Last for {ticker}")
 
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df["Date"] = parse_date_series(df["Date"])
     df = df.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
 
     for col in [c for c in ["Open", "High", "Low", "Close/Last", "Volume"] if c in df.columns]:
@@ -161,8 +171,22 @@ def standardize_dataframe(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
 
 def save_with_display_date(df: pd.DataFrame, path: Path):
     out = df.copy()
-    out["Date"] = out["Date"].dt.strftime("%d/%m/%Y")
+    if "Date" in out.columns:
+        out["Date"] = pd.to_datetime(out["Date"], errors="coerce").dt.strftime("%d/%m/%Y")
     out.to_csv(path, index=False)
+
+def summarize_dates(df: pd.DataFrame, label: str):
+    if df.empty or "Date" not in df.columns:
+        print(f"{label}: no valid date data")
+        return
+    valid_dates = df["Date"].dropna()
+    if valid_dates.empty:
+        print(f"{label}: all dates are invalid/NaT")
+        return
+    print(
+        f"{label}: rows={len(df)}, min_date={valid_dates.min()}, max_date={valid_dates.max()}",
+        flush=True
+    )
 
 def process_ticker(ticker: str):
     print("=" * 80)
@@ -180,17 +204,35 @@ def process_ticker(ticker: str):
 
     daily_df = pd.read_csv(daily_file_path)
     daily_df = standardize_dataframe(daily_df, ticker)
+    summarize_dates(daily_df, f"{ticker} daily_df")
+
     save_with_display_date(daily_df, daily_file_path)
+    print(f"Saved daily snapshot: {daily_file_path}")
 
     if master_file_path.exists():
         master_df = pd.read_csv(master_file_path)
         master_df.columns = [c.strip() for c in master_df.columns]
-        master_df["Date"] = pd.to_datetime(master_df["Date"], format="%d/%m/%Y", errors="coerce")
-        master_df = master_df.dropna(subset=["Date"])
+
+        if "Date" not in master_df.columns:
+            save_debug_response(ticker, "master_missing_date", str(master_df.columns.tolist()))
+            raise ValueError(f"{ticker}: Date column missing in master file")
+
+        master_rows_before = len(master_df)
+        master_df["Date"] = parse_date_series(master_df["Date"])
+        master_df = master_df.dropna(subset=["Date"]).reset_index(drop=True)
+        print(
+            f"{ticker} master_df rows before cleaning: {master_rows_before}, "
+            f"after cleaning: {len(master_df)}",
+            flush=True
+        )
+        summarize_dates(master_df, f"{ticker} master_df")
     else:
         master_df = pd.DataFrame(columns=daily_df.columns)
+        print(f"{ticker}: master file does not exist, creating new one", flush=True)
 
-    updated_master_df = pd.concat([master_df, daily_df], ignore_index=True)
+    combined_before = len(master_df) + len(daily_df)
+
+    updated_master_df = pd.concat([master_df, daily_df], ignore_index=True, sort=False)
     updated_master_df = (
         updated_master_df
         .dropna(subset=["Date"])
@@ -199,17 +241,28 @@ def process_ticker(ticker: str):
         .reset_index(drop=True)
     )
 
+    print(f"{ticker} combined rows before dedup: {combined_before}", flush=True)
+    print(f"{ticker} updated master rows after dedup: {len(updated_master_df)}", flush=True)
+    summarize_dates(updated_master_df, f"{ticker} updated_master_df")
+
     save_with_display_date(updated_master_df, master_file_path)
-    print(f"Saved master file: {master_file_path}")
+
+    if master_file_path.exists():
+        print(f"Saved master file: {master_file_path}", flush=True)
+        print(f"{ticker} master file size: {master_file_path.stat().st_size} bytes", flush=True)
+    else:
+        raise FileNotFoundError(f"{ticker}: master file was not written")
 
 def main():
     print("Starting ETF download/update job...")
+    print(f"Run date in Hong Kong time: {datetime.now(HK_TZ)}", flush=True)
+
     for ticker in tickers:
         try:
             process_ticker(ticker)
             time.sleep(1)
         except Exception as e:
-            print(f"Failed for {ticker}: {e}")
+            print(f"Failed for {ticker}: {e}", flush=True)
             traceback.print_exc()
 
 if __name__ == "__main__":
