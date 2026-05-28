@@ -10,14 +10,9 @@ from zoneinfo import ZoneInfo
 tickers = [
     "ITA", "PPA", "SHLD", "XAR", "EUAD", "ARKX",
     "DFEN", "MISL", "UFO", "FITE", "NATO", "JEDI",
-    "WAR", "DE", "DFNS", "ASIA", "SPDV"
+    "WAR", "DE", "DFNS", "ASIA", "SPDV", "SPY"
 ]
 
-etf_tickers = {
-    "ITA", "PPA", "SHLD", "XAR", "EUAD", "ARKX",
-    "DFEN", "MISL", "UFO", "FITE", "NATO", "JEDI",
-    "WAR", "ASIA", "SPDV"
-}
 stock_tickers = {"DE", "DFNS"}
 
 HK_TZ = ZoneInfo("Asia/Hong_Kong")
